@@ -1,7 +1,11 @@
 [project]
 name = "mero-lagani"
 version = "0.1.0"
-description = "Add your description here"
+description = "Service ready to provide Latest IPO news, and Automation bot which fills up the IPO quota"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "dotenv>=0.9.9",
+    "selenium>=4.40.0",
+    "webdriver-manager>=4.0.2",
+]
