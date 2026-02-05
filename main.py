@@ -87,11 +87,64 @@ class MeroShare:
             
             logger.info("Login action completed. Waiting for verification...")
             
-            time.sleep(10)
+            time.sleep(1)
             
         except Exception as e:
             logger.error(f"An error occurred during login: {e}")
             raise e
+
+    def get_current_issues(self) -> None:
+        """
+        Navigates to the 'My ASBA' section and extracts currently available issues.
+
+        This method identifies active IPOs, FPOs, and Right Shares by parsing
+        the company list on the ASBA dashboard and logging the details.
+        """
+        if not self.driver or not self.wait:
+            logger.error("Driver not initialized.")
+            return
+
+        try:
+            logger.info("Navigating to My ASBA...")
+            try:
+                sidebar_toggle = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@class,'sidebar-minimizer--header')]")))
+                sidebar_toggle.click()
+            except Exception:
+                logger.debug("Sidebar minimizer not found or not clickable, proceeding...")
+
+            my_asba_link = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@href='#/asba' and span[text()='My ASBA']]")))
+            my_asba_link.click()
+            
+            logger.info("Scanning for available shares...")
+            try:
+                companies = self.wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.company-list")))
+            except Exception:
+                 logger.info("No company list found (timeout).")
+                 return
+
+            if not companies:
+                logger.info("No current issues found.")
+                return
+
+            logger.info(f"Found {len(companies)} active issues:")
+            
+            for idx, comp in enumerate(companies, 1):
+                try:
+                    company_name_elem = comp.find_element(By.CSS_SELECTOR, "span[tooltip='Company Name']")
+                    company_name = company_name_elem.text.strip()
+                    
+                    sub_group_elem = comp.find_element(By.CSS_SELECTOR, "span[tooltip='Sub Group']")
+                    sub_group = sub_group_elem.text.strip()
+                    
+                    share_type_elem = comp.find_element(By.CSS_SELECTOR, "span.share-of-type")
+                    share_type = share_type_elem.text.strip()
+                    
+                    logger.info(f"{idx}. {company_name} | {sub_group} | {share_type}")
+                except Exception as e:
+                    logger.warning(f"Error parsing company info for item {idx}: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch current issues: {e}")
 
     def close(self) -> None:
         logger.info("Closing driver...")
@@ -111,6 +164,7 @@ def main() -> None:
     mero_share = MeroShare()
     try:
         mero_share.login(dp_id, username, password) # type: ignore
+        mero_share.get_current_issues()
     except Exception:
         logger.exception("Automation failed.")
     finally:
