@@ -1,36 +1,30 @@
 
-# Create your views here.
 import os
 import logging
 import json
+from django.core.management.base import BaseCommand
 from django.core.cache import cache
 from django_redis import get_redis_connection
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAdminUser
-from .models import IPO
-from .serializers import IPOSerializer
-from .services.meroshare import MeroShare
+from crawler.services.meroshare import MeroShare
+from crawler.models import IPO
+from crawler.serializers import IPOSerializer
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
-class IPOListView(APIView):
-    permission_classes = [IsAdminUser]
+class Command(BaseCommand):
+    help = 'Scrapes MeroShare for current IPOs and updates Redis cache'
 
-    def get(self, request):
-        logger.info(f"Admin {request.user} triggered force IPO refresh.")
-
-        # Force Scrape (No Cache Check)
+    def handle(self, *args, **kwargs):
+        self.stdout.write("Starting IPO refresh job...")
+        
         dp_id = os.getenv("MEROSHARE_DP_ID")
         username = os.getenv("MEROSHARE_USERNAME")
         password = os.getenv("MEROSHARE_PASSWORD")
 
         if not all([dp_id, username, password]):
-            return Response(
-                {"error": "Missing MeroShare credentials in environment variables."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            self.stdout.write(self.style.ERROR("Missing credentials in .env"))
+            return
 
         mero_share = MeroShare()
         try:
@@ -48,22 +42,21 @@ class IPOListView(APIView):
                 )
                 saved_ipos.append(ipo_obj)
             
+            # Serialize
             serializer = IPOSerializer(saved_ipos, many=True)
             data = serializer.data
             
-            # Store as JSON string for Go compatibility
+            # Convert to JSON string
             json_data = json.dumps(data)
-            con = get_redis_connection("default")
-            con.set("ipo_list", json_data)
             
-            logger.info("Admin refresh complete. Cache updated.")
-            return Response({"message": "Refreshed successfully", "data": data})
+            # Store in Redis using raw connection to avoid Django Pickling, Ensuring go read it as plain string.
+            con = get_redis_connection("default")
+            # Set Key with 15 minute (900s) Expiration
+            con.setex("ipo_list", 900, json_data)
+            
+            self.stdout.write(self.style.SUCCESS(f"Successfully updated {len(saved_ipos)} IPOs in Redis (Key: ipo_list)."))
 
         except Exception as e:
-            logger.error(f"Scraping failed: {e}")
-            return Response(
-                {"error": f"Scraping failed: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            self.stdout.write(self.style.ERROR(f"Job failed: {e}"))
         finally:
             mero_share.close()
