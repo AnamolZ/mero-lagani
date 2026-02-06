@@ -21,7 +21,6 @@ class IPOListView(APIView):
     def get(self, request):
         logger.info(f"Admin {request.user} triggered force IPO refresh.")
 
-        # Force Scrape (No Cache Check)
         dp_id = os.getenv("MEROSHARE_DP_ID")
         username = os.getenv("MEROSHARE_USERNAME")
         password = os.getenv("MEROSHARE_PASSWORD")
