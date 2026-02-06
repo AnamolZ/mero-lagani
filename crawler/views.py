@@ -2,6 +2,7 @@
 # Create your views here.
 import os
 import logging
+from django.core.cache import cache
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -13,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 class IPOListView(APIView):
     def get(self, request):
+        cached_data = cache.get("ipo_list")
+        if cached_data:
+            logger.info("Serving IPO list from Redis cache.")
+            return Response(cached_data)
+
+        # Scrape if cache miss
+        logger.info("Cache miss. Initiating MeroShare scraper...")
         dp_id = os.getenv("MEROSHARE_DP_ID")
         username = os.getenv("MEROSHARE_USERNAME")
         password = os.getenv("MEROSHARE_PASSWORD")
@@ -42,7 +50,13 @@ class IPOListView(APIView):
             
             # Serialize the updated list from DB or the scraped list
             serializer = IPOSerializer(saved_ipos, many=True)
-            return Response(serializer.data)
+            data = serializer.data
+            
+            # Set Cache (15 minutes = 900 seconds)
+            cache.set("ipo_list", data, timeout=900)
+            logger.info("IPO list cached in Redis for 15 minutes.")
+            
+            return Response(data)
 
         except Exception as e:
             logger.error(f"Scraping failed: {e}")
