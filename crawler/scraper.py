@@ -93,16 +93,18 @@ class MeroShare:
             logger.error(f"An error occurred during login: {e}")
             raise e
 
-    def get_current_issues(self) -> None:
+    def get_current_issues(self) -> list[dict]:
         """
         Navigates to the 'My ASBA' section and extracts currently available issues.
 
-        This method identifies active IPOs, FPOs, and Right Shares by parsing
-        the company list on the ASBA dashboard and logging the details.
+        Returns:
+            list[dict]: A list of dictionaries containing company details (name, group, type).
         """
         if not self.driver or not self.wait:
             logger.error("Driver not initialized.")
-            return
+            return []
+
+        found_issues = []
 
         try:
             logger.info("Navigating to My ASBA...")
@@ -120,11 +122,11 @@ class MeroShare:
                 companies = self.wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.company-list")))
             except Exception:
                  logger.info("No company list found (timeout).")
-                 return
+                 return []
 
             if not companies:
                 logger.info("No current issues found.")
-                return
+                return []
 
             logger.info(f"Found {len(companies)} active issues:")
             
@@ -140,11 +142,20 @@ class MeroShare:
                     share_type = share_type_elem.text.strip()
                     
                     logger.info(f"{idx}. {company_name} | {sub_group} | {share_type}")
+                    
+                    found_issues.append({
+                        "company_name": company_name,
+                        "sub_group": sub_group,
+                        "share_type": share_type
+                    })
+
                 except Exception as e:
                     logger.warning(f"Error parsing company info for item {idx}: {e}")
 
         except Exception as e:
             logger.error(f"Failed to fetch current issues: {e}")
+            
+        return found_issues
 
     def close(self) -> None:
         logger.info("Closing driver...")
