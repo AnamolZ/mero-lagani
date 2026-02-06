@@ -20,6 +20,12 @@ uv sync
 uv run python manage.py runserver
 ```
 
+##### For superuser creation
+
+```
+uv run python manage.py createsuperuser
+```
+
 #### Go API Service
 
 Navigate to the Go API directory and run the server:
