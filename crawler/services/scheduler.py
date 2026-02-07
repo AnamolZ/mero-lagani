@@ -6,7 +6,7 @@ from django.core.management import call_command
 
 logger = logging.getLogger(__name__)
 
-REFRESH_INTERVAL_SECONDS = 14 * 60  # 14 Minutes
+REFRESH_INTERVAL_SECONDS = 60 * 60  # 60 Minutes
 
 def run_loop():
     logger.info("Initializing IPO Cache Heartbeat Scheduler (Threaded)...")

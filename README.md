@@ -20,10 +20,23 @@ uv sync
 uv run python manage.py runserver
 ```
 
+
 ##### For superuser creation
 
 ```
 uv run python manage.py createsuperuser
+```
+
+##### Commands
+
+To manually check for new IPOs and send notifications:
+```
+uv run python manage.py sync_ipos
+```
+
+To clear the local IPO database (reset "new" detection):
+```
+uv run python manage.py clear_ipos
 ```
 
 #### Go API Service
