@@ -1,0 +1,17 @@
+# Docker ignore
+.git
+.gitignore
+.dockerignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+db.sqlite3
+.env
+.gpt
+.gemini
+bin
+obj
+go-api

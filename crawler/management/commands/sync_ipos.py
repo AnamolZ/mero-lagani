@@ -59,11 +59,13 @@ class Command(BaseCommand):
             json_data = json.dumps(data)
             
             # Store in Redis
-            con = get_redis_connection("default")
-            # Set Key with 65 minute (3900s) Expiration to allow buffer for 60m scheduler
-            con.setex("ipo_list", 3900, json_data)
-            
-            self.stdout.write(self.style.SUCCESS(f"Successfully updated {len(saved_ipos)} IPOs in Redis."))
+            try:
+                con = get_redis_connection("default")
+                # Set Key with 65 minute (3900s) Expiration to allow buffer for 60m scheduler
+                con.setex("ipo_list", 3900, json_data)
+                self.stdout.write(self.style.SUCCESS(f"Successfully updated {len(saved_ipos)} IPOs in Redis."))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"Failed to connect to Redis: {e}"))
 
             # Send Notifications if new IPOs found
             if new_ipos:
