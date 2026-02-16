@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -6,60 +5,86 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/redis/go-redis/v9"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/storage/redis/v3"
 )
 
 var ctx = context.Background()
 
-// Redis Key used by Django
-const RedisKey = ":1:ipo_list"
-
+// main initializes and runs the Go Fiber API server for serving IPO data.
+// Features:
+// - CORS enabled
+// - Redis-backed rate limiting
+// - Redis data fetching from Django cache (DB 1)
 func main() {
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
+	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
 
-	// Connect to Redis
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: "", // no password set
-		DB:       1,  // Django settings uses "redis://.../1".
+	// Redis storage for rate limiter (DB 0 to avoid collision with Django cache)
+	limiterStore := redis.New(redis.Config{
+		Host:     redisAddr,
+		Port:     6379,
+		Password: "",
+		Database: 0,
+		Reset:    false,
 	})
 
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
-
-	// Setup Fiber
+	// Initialize Fiber application
 	app := fiber.New()
 
-	// Enable CORS
+	// Enable CORS for cross-origin requests
 	app.Use(cors.New())
 
-	// Endpoint Defination
-	app.Get("/api/ipos", func(c *fiber.Ctx) error {
-		
-		// Read raw JSON string stored by Python's get_redis_connection()
-		val, err := rdb.Get(ctx, "ipo_list").Result()
-		if err == redis.Nil {
-			return c.Status(503).JSON(fiber.Map{
-				"message": "Data syncing, please try again in a moment.",
+	// Rate Limiter Middleware
+	// Restricts each IP to 50 requests per minute
+	app.Use(limiter.New(limiter.Config{
+		Max:        50,
+		Expiration: 1 * time.Minute,
+		Storage:    limiterStore,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP() // Use client IP for limiting
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many requests. Please try again later.",
 			})
-		} else if err != nil {
-			return c.Status(500).JSON(fiber.Map{
-				"error": "Redis error",
+		},
+	}))
+
+	// Redis client for reading IPO data from Django cache (DB 1)
+	dataClient := redis.New(redis.Config{
+		Host:     redisAddr,
+		Port:     6379,
+		Database: 1, // Matches Django cache DB
+	})
+
+	// Endpoint: GET /api/ipos/
+	// Returns IPO data stored in Redis as JSON
+	app.Get("/api/ipos/", func(c *fiber.Ctx) error {
+		val, err := dataClient.Get("ipo_list")
+		if err != nil {
+			// Cache miss or connection issue
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"message": "Data syncing or cache empty.",
 			})
 		}
 
-		// Python must store JSON (not pickled) so Go can read or unmarshal it safely.
+		// Respond with JSON content
 		c.Set("Content-Type", "application/json")
-		return c.SendString(val)
+		return c.Send(val)
 	})
 
 	fmt.Println("Go API Server running on port 8080")
 	log.Fatal(app.Listen(":8080"))
+}
+
+// getEnv retrieves environment variables or returns a fallback value if not set
+func getEnv(key, fallback string) string {
+	if val, exists := os.LookupEnv(key); exists {
+		return val
+	}
+	return fallback
 }

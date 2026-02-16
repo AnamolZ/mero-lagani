@@ -19,11 +19,33 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - REDIS_ADDR=redis:6379
+      - REDIS_ADDR=redis
     depends_on:
       - redis
 
   redis:
     image: redis:alpine
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery:
+    build: .
+    command: sh -c "uv run celery -A config worker --loglevel=info"
+    volumes:
+      - .:/app
+    environment:
+      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+      - REDIS_LOCATION=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - web
+
+volumes:
+  redis_data:

@@ -1,3 +1,10 @@
+"""
+Background Scheduler
+
+This module runs a background thread that periodically triggers the
+IPO synchronization command. It acts as a lightweight alternative to
+cron jobs for keeping the data fresh.
+"""
 
 import time
 import threading

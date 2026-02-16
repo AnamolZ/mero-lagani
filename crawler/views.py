@@ -1,5 +1,3 @@
-
-# Create your views here.
 import os
 import logging
 import json
@@ -8,7 +6,6 @@ from django_redis import get_redis_connection
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAdminUser
 from .models import IPO
 from .serializers import IPOSerializer
 from .services.meroshare import MeroShare
@@ -16,10 +13,14 @@ from .services.meroshare import MeroShare
 logger = logging.getLogger(__name__)
 
 class IPOListView(APIView):
-    permission_classes = [IsAdminUser]
-
+    """
+    API View to manually trigger the IPO synchronization process.
+    
+    This view triggers a fresh scrape and updates Redis/DB.
+    """
+    
     def get(self, request):
-        logger.info(f"Admin {request.user} triggered force IPO refresh.")
+        logger.info(f"User triggered force IPO refresh.")
 
         dp_id = os.getenv("MEROSHARE_DP_ID")
         username = os.getenv("MEROSHARE_USERNAME")

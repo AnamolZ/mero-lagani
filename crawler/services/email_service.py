@@ -1,162 +1,222 @@
+"""
+Email Notification Service
+
+Responsible for generating and sending IPO alert emails via SMTP.
+Builds dynamic HTML content based on IPO data and dispatches
+notifications to a list of recipients.
+"""
+
 import os
 import smtplib
 import logging
-from typing import List, Dict, Any
+from typing import List, Any
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
+
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 class EmailService:
+    """
+    Service class for preparing and sending IPO notification emails.
+    """
+
     def __init__(self):
+        """
+        Initializes SMTP configuration and preloads the base HTML template.
+        """
         self.smtp_server = "smtp-relay.brevo.com"
         self.smtp_port = 587
         self.smtp_user = os.getenv("SMTP_USER")
         self.smtp_password = os.getenv("SMTP_PASSWORD")
+
         self.sender_email = "no-reply@newspluk.com"
         self.sender_name = "Mero-Lagani Team"
+
+        # Cache base template to avoid rebuilding every send
         self._template_base = self._get_base_template()
 
     def send_ipo_notification(self, recipients: List[str], new_ipos: List[Any]) -> bool:
         """
-        Sends a notification email to recipients with the list of new IPOs.
-        
+        Sends IPO notification emails.
+
         Args:
-            recipients: List of email addresses to send to.
-            new_ipos: List of IPO objects (or dicts) containing company details.
-            
+            recipients: List of recipient email addresses
+            new_ipos: List of IPO objects or dictionaries
+
         Returns:
-            bool: True if email was sent to at least one recipient, False otherwise.
+            True if at least one email was sent successfully
         """
         if not new_ipos:
             logger.info("No new IPOs to notify about.")
             return False
 
-        subject = f"New IPO Alert: {len(new_ipos)} New Opportunit{'y' if len(new_ipos) == 1 else 'ies'} Detected"
-        
+        # Dynamic subject with pluralization
+        subject = (
+            f"New IPO Alert: {len(new_ipos)} New "
+            f"Opportunit{'y' if len(new_ipos) == 1 else 'ies'} Detected"
+        )
+
         try:
+            # Build full HTML email body
             html_content = self._build_email_content(new_ipos)
+
+            # Send email(s)
             return self._send_bulk_email(recipients, subject, html_content)
+
         except Exception as e:
             logger.error(f"Failed to prepare or send IPO notification: {e}")
             return False
 
     def _build_email_content(self, ipos: List[Any]) -> str:
-        """Constructs the full HTML email body."""
+        """
+        Builds the HTML body by injecting IPO rows into template.
+        """
         ipo_rows_html = ""
+
+        # Generate HTML block per IPO
         for ipo in ipos:
             ipo_rows_html += self._format_ipo_row(ipo)
 
-        # Inject the rows into the base template
+        # Replace placeholder with generated rows
         return self._template_base.replace("{ipo_list_content}", ipo_rows_html)
 
     def _format_ipo_row(self, ipo: Any) -> str:
-        """Formats a single IPO object into an HTML table row/block."""
-        # Handle both Django model objects and dictionaries
-        company_name = getattr(ipo, 'company_name', None) or ipo.get('company_name', 'Unknown Company')
-        share_type = getattr(ipo, 'share_type', None) or ipo.get('share_type', 'IPO')
-        raw_share_group = getattr(ipo, 'share_group', None) or ipo.get('share_group', '')
-        
-        # Extract symbol if share_group looks like "(SYMBOL)"
+        """
+        Formats a single IPO entry into an HTML block.
+
+        Supports:
+        - Django model instances
+        - Plain dictionaries
+        """
+        # Resolve attributes safely from model or dict
+        company_name = getattr(ipo, "company_name", None) or ipo.get("company_name", "Unknown Company")
+        share_type = getattr(ipo, "share_type", None) or ipo.get("share_type", "IPO")
+        raw_share_group = getattr(ipo, "share_group", None) or ipo.get("share_group", "")
+
+        # Default display values
         symbol = "-"
         share_group = raw_share_group
-        
-        if raw_share_group.startswith('(') and raw_share_group.endswith(')'):
+
+        # Extract symbol if formatted like "(SYMBOL)"
+        if raw_share_group.startswith("(") and raw_share_group.endswith(")"):
             symbol = raw_share_group[1:-1]
-        
+
+        # Return styled HTML block
         return f"""
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="
-                border:1px solid #e5e7eb;
-                border-radius:6px;
-                background:#fafbfc;
-                margin-bottom: 16px;
-            ">
-            <tr>
-                <td style="padding:18px;">
-                    <p style="
-                            margin:0;
-                            font-size:17px;
-                            font-weight:600;
-                            color:#111827;
-                        ">
-                        {company_name}
-                        <span style="
-                                font-weight:500;
+            <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="
+                    border:1px solid #e5e7eb;
+                    border-radius:6px;
+                    background:#fafbfc;
+                    margin-bottom: 16px;
+                ">
+                <tr>
+                    <td style="padding:18px;">
+                        <p style="
+                                margin:0;
+                                font-size:17px;
+                                font-weight:600;
+                                color:#111827;
+                            ">
+                            {company_name}
+                            <span style="
+                                    font-weight:500;
+                                    color:#6b7280;
+                                ">
+                                ({symbol})
+                            </span>
+
+                            <span style="
+                                    display:inline-block;
+                                    background:#0b5ed7;
+                                    color:#ffffff;
+                                    font-size:11px;
+                                    font-weight:600;
+                                    padding:4px 8px;
+                                    border-radius:4px;
+                                    margin-left:8px;
+                                    vertical-align:middle;
+                                ">
+                                {share_type}
+                            </span>
+                        </p>
+
+                        <p style="
+                                margin:8px 0 0;
+                                font-size:13px;
                                 color:#6b7280;
                             ">
-                            ({symbol})
-                        </span>
-
-                        <span style="
-                                display:inline-block;
-                                background:#0b5ed7;
-                                color:#ffffff;
-                                font-size:11px;
-                                font-weight:600;
-                                padding:4px 8px;
-                                border-radius:4px;
-                                margin-left:8px;
-                                vertical-align:middle;
-                            ">
-                            {share_type}
-                        </span>
-                    </p>
-
-                    <p style="
-                            margin:8px 0 0;
-                            font-size:13px;
-                            color:#6b7280;
-                        ">
-                        Ordinary Shares • {share_group} • NEPSE
-                    </p>
-                </td>
-            </tr>
-        </table>
+                            Ordinary Shares • {share_group} • NEPSE
+                        </p>
+                    </td>
+                </tr>
+            </table>
         """
 
     def _send_bulk_email(self, recipients: List[str], subject: str, html_body: str) -> bool:
-        """Sends the constructed email to a list of recipients."""
+        """
+        Sends HTML email to multiple recipients.
+
+        Returns:
+            True if at least one send succeeds
+        """
         if not recipients:
+            logger.warning("Recipient list is empty.")
             return False
-            
+
+        # Create reusable email container
         msg = MIMEMultipart()
-        msg['From'] = f"{self.sender_name} <{self.sender_email}>"
-        msg['Subject'] = subject
-        msg.attach(MIMEText(html_body, 'html'))
+        msg["From"] = f"{self.sender_name} <{self.sender_email}>"
+        msg["Subject"] = subject
+        msg.attach(MIMEText(html_body, "html"))
 
         try:
+            # Establish SMTP connection
             server = smtplib.SMTP(self.smtp_server, self.smtp_port)
             server.starttls()
+
+            # Authenticate
             server.login(self.smtp_user, self.smtp_password)
-            
+
             success_count = 0
+
             for recipient in recipients:
                 try:
-                    msg.replace_header('To', recipient) if 'To' in msg else msg.add_header('To', recipient)
-                    
+                    # Update recipient header dynamically
+                    if "To" in msg:
+                        msg.replace_header("To", recipient)
+                    else:
+                        msg.add_header("To", recipient)
+
+                    # Send email
                     server.sendmail(self.sender_email, recipient, msg.as_string())
+
                     logger.info(f"Email sent successfully to {recipient}")
                     success_count += 1
+
                 except Exception as inner_e:
                     logger.error(f"Failed to send to {recipient}: {inner_e}")
 
             server.quit()
+
             return success_count > 0
 
         except Exception as e:
-            logger.error(f"Failed to connect to SMTP server: {e}")
+            logger.error(f"SMTP connection failed: {e}")
             return False
 
     def _get_base_template(self) -> str:
+        """
+        Returns the base HTML template used for IPO notifications.
+        """
         return """
             <!DOCTYPE html>
             <html>
@@ -248,21 +308,14 @@ class EmailService:
         """
 
 if __name__ == "__main__":
+    # manual test runner
     email_service = EmailService()
-    
+
     test_ipos = [
-        {
-            "company_name": "Test Hydropower Ltd.",
-            "share_type": "IPO",
-            "share_group": "(THL)"
-        },
-        {
-            "company_name": "Another Finance Co.",
-            "share_type": "FPO",
-            "share_group": "Finance"
-        }
+        {"company_name": "Test Hydropower Ltd.", "share_type": "IPO", "share_group": "(THL)"},
+        {"company_name": "Another Finance Co.", "share_type": "FPO", "share_group": "Finance"},
     ]
-    
+
     email_service.send_ipo_notification(
         recipients=["anmoldkl971@gmail.com"],
         new_ipos=test_ipos
