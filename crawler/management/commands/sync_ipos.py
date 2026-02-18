@@ -40,6 +40,8 @@ class Command(BaseCommand):
         recipients = [
             "anmoldkl971@gmail.com",
             "danamol22@tbc.edu.np",
+            "binapokhrel056@gmail.com",
+            "ansarimdrajaul2@gmail.com"
         ]
 
         try:
