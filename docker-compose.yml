@@ -16,7 +16,6 @@ services:
       - redis
 
   api:
-    image: err0rz/mero-lagani-api:latest
     build:
       context: ./go-api
     ports:

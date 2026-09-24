@@ -42,18 +42,13 @@ Mero-Lagani is an automated market tracker and IPO notification system for MeroS
 
 ---
 
-## Docker Hub Images
+## Docker Hub Image
 
-Pre-built Docker images are published on Docker Hub:
+The official Docker image for this project is available on Docker Hub:
 
-- **Main Application (Django + Scraper + Celery)**:
-  ```bash
-  docker pull err0rz/mero-lagani:latest
-  ```
-- **Go Fiber API**:
-  ```bash
-  docker pull err0rz/mero-lagani-api:latest
-  ```
+```bash
+docker pull err0rz/mero-lagani:latest
+```
 
 ---
 
