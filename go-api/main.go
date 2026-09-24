@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,12 +23,25 @@ var ctx = context.Background()
 // - Redis-backed rate limiting
 // - Redis data fetching from Django cache (DB 1)
 func main() {
-	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
+	rawAddr := getEnv("REDIS_ADDR", "127.0.0.1:6389")
+	redisHost := rawAddr
+	redisPort := 6389
+
+	if h, p, err := net.SplitHostPort(rawAddr); err == nil {
+		redisHost = h
+		if parsedPort, err := strconv.Atoi(p); err == nil {
+			redisPort = parsedPort
+		}
+	} else if pStr := os.Getenv("REDIS_PORT"); pStr != "" {
+		if parsedPort, err := strconv.Atoi(pStr); err == nil {
+			redisPort = parsedPort
+		}
+	}
 
 	// Redis storage for rate limiter (DB 0 to avoid collision with Django cache)
 	limiterStore := redis.New(redis.Config{
-		Host:     redisAddr,
-		Port:     6379,
+		Host:     redisHost,
+		Port:     redisPort,
 		Password: "",
 		Database: 0,
 		Reset:    false,
@@ -56,8 +71,8 @@ func main() {
 
 	// Redis client for reading IPO data from Django cache (DB 1)
 	dataClient := redis.New(redis.Config{
-		Host:     redisAddr,
-		Port:     6379,
+		Host:     redisHost,
+		Port:     redisPort,
 		Database: 1, // Matches Django cache DB
 	})
 

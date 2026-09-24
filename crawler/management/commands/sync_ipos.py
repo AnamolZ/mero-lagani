@@ -50,10 +50,12 @@ class Command(BaseCommand):
 
             try:
                 redis_conn = get_redis_connection("default")
+                redis_conn.ping()
             except Exception as exc:
                 self.stdout.write(
                     self.style.ERROR(f"Redis connection failed: {exc}")
                 )
+                logger.error(f"Redis connection failed: {exc}")
                 return
 
             saved_ipos = []

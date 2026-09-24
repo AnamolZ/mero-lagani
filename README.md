@@ -1,137 +1,173 @@
+# Mero-Lagani
 
-### Mero-Lagani
-
-Mero-Lagani is an automated market tracker that keeps an eye on company listings and market activity so you don’t have to. It collects and updates financial data in the background, saving you from checking multiple sites manually.
-
-The system uses browser automation to fetch fresh data, stores it in Redis for fast access, and refreshes everything daily. It’s built to stay fast, reliable, and easy to scale as it grows.
+Mero-Lagani is an automated market tracker and IPO notification system for MeroShare. It collects and updates financial/IPO data in the background using browser automation (headless Chrome + Selenium), caches it in Redis for high-performance access, serves it through a blazing-fast Go API, and dispatches asynchronous email notifications using Celery.
 
 ---
-
-### Runner (No Docker)
-
-This project can be run locally without using Docker. Follow the steps below to start both the backend services.
-
-#### Python Service
-
-Install dependencies and start the Django server:
-
-```
-uv sync
-uv run python manage.py runserver
-```
 
 ## System Architecture
 
-### Overview
-This project is an automated system designed to scrape IPO data from MeroShare, cache it for high-performance access, and notify users of new opportunities.
+```
++-----------------------------------------------------------+
+|                      MeroShare Portal                     |
++-----------------------------+-----------------------------+
+                              | (Headless Chrome / Selenium)
+                              v
+                  +-----------------------+
+                  |  Django Web & Scraper | <--- Port 8000
+                  +-----------+-----------+
+                              |
+       +----------------------+----------------------+
+       | (Cache & Deduplication)                     | (Task Queue)
+       v                                             v
++--------------+                             +---------------+
+| Redis (6379) |                             | Celery Worker |
++-------+------+                             +-------+-------+
+        |                                            |
+        |                                            v
+        v (Consume cached JSON)             (Async SMTP Emails)
++---------------+
+|  Go Fiber API | <--- Port 8080
++---------------+
+```
 
 ### Core Components
+1. **Scraper (Selenium)**: Located in `crawler/services/meroshare.py`. Uses headless Chrome to log in to MeroShare and extract active issues.
+2. **Scheduler**: Runs a background thread that periodically triggers synchronization.
+3. **Redis**:
+   - Stores the full list of IPOs as JSON in DB 1 (`ipo_list`) for the Go API.
+   - Deduplicates IPOs using a Redis Set in DB 1 (`seen_ipos`).
+   - Acts as task broker and results backend in DB 0 for Celery.
+4. **Go Fiber API**: Fast endpoint on port `8080` with rate limiting that serves cached IPO records from Redis.
+5. **Celery Worker**: Asynchronously dispatches HTML email notifications via SMTP.
 
-1.  **Scraper (Selenium)**:
-    - Located in `crawler/services/meroshare.py`.
-    - Uses headless Chrome to log in to MeroShare and extract the "My ASBA" list.
+---
 
-2.  **Scheduler**:
-    - Located in `crawler/services/scheduler.py`.
-    - Runs a background thread that triggers the synchronization command every 60 minutes.
+## Docker Hub Images
 
-3.  **Data Storage & Caching**:
-    - **Redis (Cache)**: Stores the full list of IPOs as a JSON string for the external Go API to consume.
-    - **Redis (Deduplication)**: Uses a Redis Set (`seen_ipos`) to track which IPOs have already been processed to prevent duplicate emails.
-    - **SQLite (Database)**: Acts as a persistent log for the admin panel.
+Pre-built Docker images are published on Docker Hub:
 
-4.  **Asynchronous Notifications (Celery)**:
-    - Located in `crawler/tasks.py`.
-    - When a new IPO is detected, the `sync_ipos` command triggers a Celery task.
-    - The Celery worker processes this task in the background, sending emails via SMTP.
+- **Main Application (Django + Scraper + Celery)**:
+  ```bash
+  docker pull err0rz/mero-lagani:latest
+  ```
+- **Go Fiber API**:
+  ```bash
+  docker pull err0rz/mero-lagani-api:latest
+  ```
 
-### Workflow
-1.  **Trigger**: Scheduler (or Admin API) calls `sync_ipos`.
-2.  **Scrape**: Selenium fetches current data.
-3.  **Process**:
-    - API Cache (`ipo_list`) is overwritten with fresh data.
-    - Each IPO is checked against the Redis Set `seen_ipos`.
-4.  **Notify**: If an IPO is new (not in Set), a Celery task is queued.
-5.  **Deliver**: Celery worker picks up the task and sends emails.
+---
 
-## Installation
+## Quickstart with Docker Compose
 
-##### For superuser creation
+The easiest way to run the entire stack is with Docker Compose.
 
-```
-uv run python manage.py createsuperuser
-```
-
-##### Commands
-
-To manually check for new IPOs and send notifications:
-```
-uv run python manage.py sync_ipos
-```
-
-To clear the local IPO database (reset "new" detection):
-```
-uv run python manage.py clear_ipos
-```
-
-#### Celery Worker (Email Service)
-The email notifications are now handled asynchronously by Celery.
-
-To run the worker locally (without Docker):
+### 1. Environment Setup
+Copy the example environment file:
 ```bash
-# Make sure you have a Redis instance running on port 6379
+cp .env.example .env
+```
+Edit `.env` and fill in your MeroShare credentials and email SMTP settings:
+```env
+# MeroShare Automation Credentials
+MEROSHARE_DP_ID=your_dp_id
+MEROSHARE_USERNAME=your_username
+MEROSHARE_PASSWORD=your_password
+
+# SMTP Email Configuration (e.g. Brevo)
+SMTP_USER=your_smtp_user
+SMTP_PASSWORD=your_smtp_password
+```
+
+### 2. Pull & Start Services
+Pull the latest images from Docker Hub and start all containers:
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### 3. Verify Running Services
+```bash
+docker compose ps
+```
+The stack runs:
+- `web`: Django backend & scraper at `http://localhost:8000`
+- `api`: Go Fiber API at `http://localhost:8080`
+- `redis`: Redis server (mapped to `localhost:6389` on host, internal `6379`)
+- `celery`: Background email worker
+
+### 4. Test the Endpoints
+- **Go API (Cached Data)**:
+  ```bash
+  curl http://localhost:8080/api/ipos/
+  ```
+- **Django API (Trigger Fresh Scrape)**:
+  ```bash
+  curl http://localhost:8000/api/ipos/
+  ```
+
+### 5. Running Container Commands
+- **Manual IPO Scrape & Sync**:
+  ```bash
+  docker compose exec web uv run python manage.py sync_ipos
+  ```
+- **Clear IPO Cache**:
+  ```bash
+  docker compose exec web uv run python manage.py clear_ipos
+  ```
+- **Create Superuser**:
+  ```bash
+  docker compose exec web uv run python manage.py createsuperuser
+  ```
+- **View Container Logs**:
+  ```bash
+  docker compose logs -f web
+  docker compose logs -f celery
+  docker compose logs -f api
+  ```
+
+---
+
+## Running Standalone Docker Container
+
+If you only want to run the web application container:
+
+```bash
+docker run -d \
+  --name mero-lagani \
+  -p 8000:8000 \
+  --env-file .env \
+  err0rz/mero-lagani:latest
+```
+
+---
+
+## Local Development (Without Docker)
+
+### Prerequisites
+- Python 3.12+ (or [uv](https://docs.astral.sh/uv/))
+- Google Chrome installed (for Selenium)
+- Redis instance running on `localhost:6389` (or `6379`)
+- Go 1.22+ (for `go-api`)
+
+### 1. Python Django Service
+```bash
+# Install dependencies
+uv sync
+
+# Run database migrations
+uv run python manage.py migrate
+
+# Start development server
+uv run python manage.py runserver
+```
+
+### 2. Celery Worker (Email Notifications)
+```bash
 uv run celery -A config worker --loglevel=info
 ```
 
-When using Docker, the `celery` container starts automatically.
-
-#### Go API Service
-
-Navigate to the Go API directory and run the server:
-
-```
+### 3. Go API Service
+```bash
 cd go-api
 go run main.go
 ```
-
-Both services should now be running locally.
-
----
-
-### Runner (Docker)
-
-This project can be run locally using Docker. Follow the instructions below to manage backend services.
-
-#### Build Services
-
-Build all Docker images before starting the containers.
-
-```bash
-docker-compose build
-```
-
-#### Start Services
-
-Start all services defined in `docker-compose.yml`.
-
-```bash
-docker-compose up
-```
-
-#### Clear IPO Cache
-
-Removes all IPO records stored in Redis.
-
-```bash
-docker-compose exec web uv run python manage.py clear_ipos --force
-```
-
-#### Sync IPOs
-
-Fetches the latest IPOs and updates the Redis cache.
-
-```bash
-docker-compose exec web uv run python manage.py sync_ipos
-```
-
----

@@ -1,10 +1,12 @@
 services:
   web:
+    image: err0rz/mero-lagani:latest
     build: .
     ports:
       - "8000:8000"
     volumes:
       - .:/app
+      - /app/.venv
     environment:
       - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
       - REDIS_LOCATION=redis://redis:6379/1
@@ -14,12 +16,13 @@ services:
       - redis
 
   api:
+    image: err0rz/mero-lagani-api:latest
     build:
       context: ./go-api
     ports:
       - "8080:8080"
     environment:
-      - REDIS_ADDR=redis
+      - REDIS_ADDR=redis:6379
     depends_on:
       - redis
 
@@ -27,15 +30,17 @@ services:
     image: redis:alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "6389:6379"
     volumes:
       - redis_data:/data
 
   celery:
+    image: err0rz/mero-lagani:latest
     build: .
     command: sh -c "uv run celery -A config worker --loglevel=info"
     volumes:
       - .:/app
+      - /app/.venv
     environment:
       - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
       - REDIS_LOCATION=redis://redis:6379/1
